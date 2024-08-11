@@ -11,6 +11,7 @@ import src.utils.masking as masking_utils
 from utils.mediapipe_utils import run_mediapipe
 from datasets.base_dataset import create_mask
 import torch.nn.functional as F
+from time import perf_counter
 
 
 def crop_face(frame, landmarks, scale=1.0, image_size=224):
@@ -49,7 +50,8 @@ if __name__ == '__main__':
 
     image_size = 224
     
-
+    load_start = perf_counter()
+    
     # ----------------------- initialize configuration ----------------------- #
     smirk_encoder = SmirkEncoder().to(args.device)
     checkpoint = torch.load(args.checkpoint)
@@ -104,17 +106,33 @@ if __name__ == '__main__':
     cropped_image = torch.tensor(cropped_image).permute(2,0,1).unsqueeze(0).float()/255.0
     cropped_image = cropped_image.to(args.device)
 
+    load_end = perf_counter()
+    
+    smirk_start = perf_counter()
+
     outputs = smirk_encoder(cropped_image)
-    print("\n  SMIRK outputs:")
+    
+    smirk_end = perf_counter()
+    
+    print("\nSMIRK outputs:")
     for k in outputs.keys():
-        print(k.ljust(24, ' '), outputs[k].shape)
+        print(k.ljust(24, ' '), list(outputs[k].shape))
         # print(outputs[k])
 
+    flame_start = perf_counter()
+
     flame_output = flame.forward(outputs)
-    print("\n  FLAME outputs:")
+    
+    flame_end = perf_counter()
+    
+    print("\nFLAME outputs:")
     for k in flame_output.keys():
-        print(k.ljust(24, ' '), flame_output[k].shape)
+        print(k.ljust(24, ' '), list(flame_output[k].shape))
         # print(flame_output[k])
+    
+    print("\nload:  ", load_end - load_start)
+    print("smirk: ", smirk_end - smirk_start)
+    print("flame: ", flame_end - flame_start)
     
     # renderer_output = renderer.forward(flame_output['vertices'], outputs['cam'],
                                         # landmarks_fan=flame_output['landmarks_fan'], landmarks_mp=flame_output['landmarks_mp'])
