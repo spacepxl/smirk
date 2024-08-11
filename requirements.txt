@@ -1,0 +1,6 @@
+torch
+torchvision
+numpy
+mediapipe
+scikit-image
+timm
