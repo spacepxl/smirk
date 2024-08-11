@@ -4,7 +4,7 @@ import numpy as np
 from skimage.transform import estimate_transform, warp
 from src.smirk_encoder import SmirkEncoder
 from src.FLAME.FLAME import FLAME
-from src.renderer.renderer import Renderer
+# from src.renderer.renderer import Renderer
 import argparse
 import os
 import src.utils.masking as masking_utils
@@ -37,9 +37,9 @@ def crop_face(frame, landmarks, scale=1.0, image_size=224):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
 
-    parser.add_argument('--input_path', type=str, default='samples/mead_90.png', help='Path to the input image/video')
+    parser.add_argument('--input_path', type=str, default='samples/test_image2.png', help='Path to the input image/video')
     parser.add_argument('--device', type=str, default='cuda', help='Device to run the model on')
-    parser.add_argument('--checkpoint', type=str, default='trained_models/SMIRK_em1.pt', help='Path to the checkpoint')
+    parser.add_argument('--checkpoint', type=str, default='pretrained_models/SMIRK_em1.pt', help='Path to the checkpoint')
     parser.add_argument('--crop', action='store_true', help='Crop the face using mediapipe')
     parser.add_argument('--out_path', type=str, default='output', help='Path to save the output (will be created if not exists)')
     parser.add_argument('--use_smirk_generator', action='store_true', help='Use SMIRK neural image to image translator to reconstruct the image')
@@ -69,7 +69,7 @@ if __name__ == '__main__':
     # ---- visualize the results ---- #
 
     flame = FLAME().to(args.device)
-    renderer = Renderer().to(args.device)
+    # renderer = Renderer().to(args.device)
 
     # check if input is an image or a video or webcam or directory
     
@@ -105,90 +105,98 @@ if __name__ == '__main__':
     cropped_image = cropped_image.to(args.device)
 
     outputs = smirk_encoder(cropped_image)
-
+    print("\n  SMIRK outputs:")
+    for k in outputs.keys():
+        print(k.ljust(24, ' '), outputs[k].shape)
+        # print(outputs[k])
 
     flame_output = flame.forward(outputs)
-    renderer_output = renderer.forward(flame_output['vertices'], outputs['cam'],
-                                        landmarks_fan=flame_output['landmarks_fan'], landmarks_mp=flame_output['landmarks_mp'])
+    print("\n  FLAME outputs:")
+    for k in flame_output.keys():
+        print(k.ljust(24, ' '), flame_output[k].shape)
+        # print(flame_output[k])
     
-    rendered_img = renderer_output['rendered_img']
+    # renderer_output = renderer.forward(flame_output['vertices'], outputs['cam'],
+                                        # landmarks_fan=flame_output['landmarks_fan'], landmarks_mp=flame_output['landmarks_mp'])
+    
+    # rendered_img = renderer_output['rendered_img']
 
 
-    if args.render_orig:
-        if args.crop:
-            rendered_img_numpy = (rendered_img.squeeze(0).permute(1,2,0).detach().cpu().numpy()*255.0).astype(np.uint8)               
-            rendered_img_orig = warp(rendered_img_numpy, tform, output_shape=(orig_image_height, orig_image_width), preserve_range=True).astype(np.uint8)
+    # if args.render_orig:
+        # if args.crop:
+            # rendered_img_numpy = (rendered_img.squeeze(0).permute(1,2,0).detach().cpu().numpy()*255.0).astype(np.uint8)               
+            # rendered_img_orig = warp(rendered_img_numpy, tform, output_shape=(orig_image_height, orig_image_width), preserve_range=True).astype(np.uint8)
             # back to pytorch to concatenate with full_image
-            rendered_img_orig = torch.Tensor(rendered_img_orig).permute(2,0,1).unsqueeze(0).float()/255.0
-        else:
-            rendered_img_orig = F.interpolate(rendered_img, (orig_image_height, orig_image_width), mode='bilinear').cpu()
+            # rendered_img_orig = torch.Tensor(rendered_img_orig).permute(2,0,1).unsqueeze(0).float()/255.0
+        # else:
+            # rendered_img_orig = F.interpolate(rendered_img, (orig_image_height, orig_image_width), mode='bilinear').cpu()
 
-        full_image = torch.Tensor(cv2.cvtColor(image, cv2.COLOR_BGR2RGB)).permute(2,0,1).unsqueeze(0).float()/255.0
-        grid = torch.cat([full_image, rendered_img_orig], dim=3)
-    else:
-        grid = torch.cat([cropped_image, rendered_img], dim=3)
+        # full_image = torch.Tensor(cv2.cvtColor(image, cv2.COLOR_BGR2RGB)).permute(2,0,1).unsqueeze(0).float()/255.0
+        # grid = torch.cat([full_image, rendered_img_orig], dim=3)
+    # else:
+        # grid = torch.cat([cropped_image, rendered_img], dim=3)
 
 
     # ---- create the neural renderer reconstructed img ---- #
-    if args.use_smirk_generator:
-        if (kpt_mediapipe is None):
-            print('Could not find landmarks for the image using mediapipe and cannot create the hull mask for the smirk generator. Exiting...')
-            exit()
+    # if args.use_smirk_generator:
+        # if (kpt_mediapipe is None):
+            # print('Could not find landmarks for the image using mediapipe and cannot create the hull mask for the smirk generator. Exiting...')
+            # exit()
 
-        mask_ratio_mul = 5
-        mask_ratio = 0.01
-        mask_dilation_radius = 10
+        # mask_ratio_mul = 5
+        # mask_ratio = 0.01
+        # mask_dilation_radius = 10
 
-        hull_mask = create_mask(cropped_kpt_mediapipe, (224, 224))
+        # hull_mask = create_mask(cropped_kpt_mediapipe, (224, 224))
 
-        face_probabilities = masking_utils.load_probabilities_per_FLAME_triangle()  
+        # face_probabilities = masking_utils.load_probabilities_per_FLAME_triangle()  
 
-        rendered_mask = 1 - (rendered_img == 0).all(dim=1, keepdim=True).float()
-        tmask_ratio = mask_ratio * mask_ratio_mul # upper bound on the number of points to sample
+        # rendered_mask = 1 - (rendered_img == 0).all(dim=1, keepdim=True).float()
+        # tmask_ratio = mask_ratio * mask_ratio_mul # upper bound on the number of points to sample
         
-        npoints, _ = masking_utils.mesh_based_mask_uniform_faces(renderer_output['transformed_vertices'], # sample uniformly from the mesh
-                                                                flame_faces=flame.faces_tensor,
-                                                                face_probabilities=face_probabilities,
-                                                                mask_ratio=tmask_ratio)
+        # npoints, _ = masking_utils.mesh_based_mask_uniform_faces(renderer_output['transformed_vertices'], # sample uniformly from the mesh
+                                                                # flame_faces=flame.faces_tensor,
+                                                                # face_probabilities=face_probabilities,
+                                                                # mask_ratio=tmask_ratio)
         
-        pmask = torch.zeros_like(rendered_mask)                
-        rsing = torch.randint(0, 2, (npoints.size(0),)).to(npoints.device) * 2 - 1
-        rscale = torch.rand((npoints.size(0),)).to(npoints.device) * (mask_ratio_mul - 1) + 1
-        rbound =(npoints.size(1) * (1/mask_ratio_mul) * (rscale ** rsing)).long()
+        # pmask = torch.zeros_like(rendered_mask)                
+        # rsing = torch.randint(0, 2, (npoints.size(0),)).to(npoints.device) * 2 - 1
+        # rscale = torch.rand((npoints.size(0),)).to(npoints.device) * (mask_ratio_mul - 1) + 1
+        # rbound =(npoints.size(1) * (1/mask_ratio_mul) * (rscale ** rsing)).long()
 
-        for bi in range(npoints.size(0)):
-            pmask[bi, :, npoints[bi, :rbound[bi], 1], npoints[bi, :rbound[bi], 0]] = 1
+        # for bi in range(npoints.size(0)):
+            # pmask[bi, :, npoints[bi, :rbound[bi], 1], npoints[bi, :rbound[bi], 0]] = 1
         
-        hull_mask = torch.from_numpy(hull_mask).type(dtype = torch.float32).unsqueeze(0).to(args.device)
+        # hull_mask = torch.from_numpy(hull_mask).type(dtype = torch.float32).unsqueeze(0).to(args.device)
 
-        extra_points = cropped_image * pmask
-        masked_img = masking_utils.masking(cropped_image, hull_mask, extra_points, mask_dilation_radius, rendered_mask=rendered_mask)
+        # extra_points = cropped_image * pmask
+        # masked_img = masking_utils.masking(cropped_image, hull_mask, extra_points, mask_dilation_radius, rendered_mask=rendered_mask)
 
-        smirk_generator_input = torch.cat([rendered_img, masked_img], dim=1)
+        # smirk_generator_input = torch.cat([rendered_img, masked_img], dim=1)
 
-        reconstructed_img = smirk_generator(smirk_generator_input)
+        # reconstructed_img = smirk_generator(smirk_generator_input)
 
-        if args.render_orig:
-            if args.crop:
-                reconstructed_img_numpy = (reconstructed_img.squeeze(0).permute(1,2,0).detach().cpu().numpy()*255.0).astype(np.uint8)               
-                reconstructed_img_orig = warp(reconstructed_img_numpy, tform, output_shape=(orig_image_height, orig_image_width), preserve_range=True).astype(np.uint8)
+        # if args.render_orig:
+            # if args.crop:
+                # reconstructed_img_numpy = (reconstructed_img.squeeze(0).permute(1,2,0).detach().cpu().numpy()*255.0).astype(np.uint8)               
+                # reconstructed_img_orig = warp(reconstructed_img_numpy, tform, output_shape=(orig_image_height, orig_image_width), preserve_range=True).astype(np.uint8)
                 # back to pytorch to concatenate with full_image
-                reconstructed_img_orig = torch.Tensor(reconstructed_img_orig).permute(2,0,1).unsqueeze(0).float()/255.0
-            else:
-                reconstructed_img_orig = F.interpolate(reconstructed_img, (orig_image_height, orig_image_width), mode='bilinear').cpu()
+                # reconstructed_img_orig = torch.Tensor(reconstructed_img_orig).permute(2,0,1).unsqueeze(0).float()/255.0
+            # else:
+                # reconstructed_img_orig = F.interpolate(reconstructed_img, (orig_image_height, orig_image_width), mode='bilinear').cpu()
 
-            grid = torch.cat([grid, reconstructed_img_orig], dim=3)
-        else:
-            grid = torch.cat([grid, reconstructed_img], dim=3)
+            # grid = torch.cat([grid, reconstructed_img_orig], dim=3)
+        # else:
+            # grid = torch.cat([grid, reconstructed_img], dim=3)
 
-    grid_numpy = grid.squeeze(0).permute(1,2,0).detach().cpu().numpy()*255.0
-    grid_numpy = grid_numpy.astype(np.uint8)
-    grid_numpy = cv2.cvtColor(grid_numpy, cv2.COLOR_BGR2RGB)
+    # grid_numpy = grid.squeeze(0).permute(1,2,0).detach().cpu().numpy()*255.0
+    # grid_numpy = grid_numpy.astype(np.uint8)
+    # grid_numpy = cv2.cvtColor(grid_numpy, cv2.COLOR_BGR2RGB)
 
-    if not os.path.exists(args.out_path):
-        os.makedirs(args.out_path)
+    # if not os.path.exists(args.out_path):
+        # os.makedirs(args.out_path)
 
-    image_name = args.input_path.split('/')[-1]
+    # image_name = args.input_path.split('/')[-1]
 
-    cv2.imwrite(f"{args.out_path}/{image_name}", grid_numpy)
+    # cv2.imwrite(f"{args.out_path}/{image_name}", grid_numpy)
 
