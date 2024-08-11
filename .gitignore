@@ -1,4 +1,5 @@
 .venv/
+data/
 logs/
 trained_models/
 pretrained_models/
