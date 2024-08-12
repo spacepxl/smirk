@@ -11,7 +11,6 @@ import src.utils.masking as masking_utils
 from utils.mediapipe_utils import run_mediapipe
 from datasets.base_dataset import create_mask
 import torch.nn.functional as F
-from time import perf_counter
 
 
 def crop_face(frame, landmarks, scale=1.0, image_size=224):
@@ -49,8 +48,6 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     image_size = 224
-    
-    load_start = perf_counter()
     
     # ----------------------- initialize configuration ----------------------- #
     smirk_encoder = SmirkEncoder().to(args.device)
@@ -108,35 +105,17 @@ if __name__ == '__main__':
     cropped_image = torch.tensor(cropped_image).permute(2,0,1).unsqueeze(0).float()/255.0
     cropped_image = cropped_image.to(args.device)
 
-    load_end = perf_counter()
-    
-    smirk_start = perf_counter()
-
     outputs = smirk_encoder(cropped_image)
-    
-    smirk_end = perf_counter()
     
     print("\nSMIRK outputs:")
     for k in outputs.keys():
         print(k.ljust(24, ' '), list(outputs[k].shape))
-        # print(outputs[k])
-
-    flame_start = perf_counter()
 
     flame_output = flame.forward(outputs)
-    
-    flame_end = perf_counter()
     
     print("\nFLAME outputs:")
     for k in flame_output.keys():
         print(k.ljust(24, ' '), list(flame_output[k].shape))
-        # print(flame_output[k])
-    
-    print("\nload:  ", load_end - load_start)
-    print("smirk: ", smirk_end - smirk_start)
-    print("flame: ", flame_end - flame_start)
-    
-    # import trimesh
     
     flame_verts = flame_output['vertices'][0].detach().cpu()
     verts_total = int(flame_verts.size(0))
@@ -156,15 +135,9 @@ if __name__ == '__main__':
             if not line:
                 break
     
-    # base_mesh = trimesh.load_mesh(file_obj="assets/head_template.obj", file_type="obj", skip_materials=True, maintain_order=True)
-    # flame_mesh = base_mesh.copy()
-    # flame_mesh.vertices = flame_verts
-    # flame_mesh.show()
-    
     os.makedirs(args.out_path, exist_ok=True)
     image_name = os.path.basename(args.input_path).split(".")[0]
     obj_name = f"{args.out_path}/{image_name}.obj"
-    # flame_mesh.export(obj_name, write_texture=False)
     
     with open(obj_name, "w") as wf:
         wf.writelines(obj_lines)
