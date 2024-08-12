@@ -81,6 +81,8 @@ if __name__ == '__main__':
     orig_image_height, orig_image_width, _ = image.shape
 
     kpt_mediapipe = run_mediapipe(image)
+    print(kpt_mediapipe.shape)
+    print(kpt_mediapipe)
 
     # crop face if needed
     if args.crop:
@@ -133,6 +135,39 @@ if __name__ == '__main__':
     print("\nload:  ", load_end - load_start)
     print("smirk: ", smirk_end - smirk_start)
     print("flame: ", flame_end - flame_start)
+    
+    # import trimesh
+    
+    flame_verts = flame_output['vertices'][0].detach().cpu()
+    verts_total = int(flame_verts.size(0))
+    
+    obj_lines = []
+    with open("assets/head_template.obj", "r") as obj_file:
+        vert_counter = 0
+        while True:
+            line = obj_file.readline()
+            
+            if line.startswith("v ") and vert_counter < verts_total:
+                obj_lines.append(f"v {flame_verts[vert_counter, 0]} {flame_verts[vert_counter, 1]} {flame_verts[vert_counter, 2]}\n")
+                vert_counter += 1
+            else:
+                obj_lines.append(line)
+            
+            if not line:
+                break
+    
+    # base_mesh = trimesh.load_mesh(file_obj="assets/head_template.obj", file_type="obj", skip_materials=True, maintain_order=True)
+    # flame_mesh = base_mesh.copy()
+    # flame_mesh.vertices = flame_verts
+    # flame_mesh.show()
+    
+    os.makedirs(args.out_path, exist_ok=True)
+    image_name = os.path.basename(args.input_path).split(".")[0]
+    obj_name = f"{args.out_path}/{image_name}.obj"
+    # flame_mesh.export(obj_name, write_texture=False)
+    
+    with open(obj_name, "w") as wf:
+        wf.writelines(obj_lines)
     
     # renderer_output = renderer.forward(flame_output['vertices'], outputs['cam'],
                                         # landmarks_fan=flame_output['landmarks_fan'], landmarks_mp=flame_output['landmarks_mp'])
