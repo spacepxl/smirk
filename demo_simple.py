@@ -5,6 +5,7 @@ from skimage.transform import estimate_transform, warp
 from src.smirk_encoder import SmirkEncoder
 from src.FLAME.FLAME import FLAME
 # from src.renderer.renderer import Renderer
+from src.renderer.util import batch_orth_proj
 import argparse
 import os
 import src.utils.masking as masking_utils
@@ -99,7 +100,7 @@ if __name__ == '__main__':
         cropped_image = image
         cropped_kpt_mediapipe = kpt_mediapipe
 
-    
+    output_image = cropped_image.copy()
     cropped_image = cv2.cvtColor(cropped_image, cv2.COLOR_BGR2RGB)
     cropped_image = cv2.resize(cropped_image, (224,224))
     cropped_image = torch.tensor(cropped_image).permute(2,0,1).unsqueeze(0).float()/255.0
@@ -117,7 +118,11 @@ if __name__ == '__main__':
     for k in flame_output.keys():
         print(k.ljust(24, ' '), list(flame_output[k].shape))
     
-    flame_verts = flame_output['vertices'][0].detach().cpu()
+    transformed_vertices = batch_orth_proj(flame_output['vertices'], outputs['cam'])
+    # transformed_vertices[:, :, 1:] = -transformed_vertices[:, :, 1:]
+    
+    # flame_verts = flame_output['vertices'][0].detach().cpu()
+    flame_verts = transformed_vertices[0].detach().cpu()
     verts_total = int(flame_verts.size(0))
     
     obj_lines = []
@@ -141,6 +146,9 @@ if __name__ == '__main__':
     
     with open(obj_name, "w") as wf:
         wf.writelines(obj_lines)
+    
+    crop_name = f"{args.out_path}/{image_name}.png"
+    cv2.imwrite(crop_name, output_image)
     
     # renderer_output = renderer.forward(flame_output['vertices'], outputs['cam'],
                                         # landmarks_fan=flame_output['landmarks_fan'], landmarks_mp=flame_output['landmarks_mp'])
