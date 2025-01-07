@@ -25,6 +25,7 @@ np.unicode = np.unicode_
 np.str = np.str_
 import pickle
 import torch.nn.functional as F
+from collections import namedtuple
 
 from .lbs import lbs, batch_rodrigues, vertices2landmarks, rot_mat_to_euler
 
@@ -114,9 +115,14 @@ class FLAME(nn.Module):
 
 
 
-    def _find_dynamic_lmk_idx_and_bcoords(self, pose, dynamic_lmk_faces_idx,
-                                          dynamic_lmk_b_coords,
-                                          neck_kin_chain, dtype=torch.float32):
+    def _find_dynamic_lmk_idx_and_bcoords(
+        self,
+        pose,
+        dynamic_lmk_faces_idx,
+        dynamic_lmk_b_coords,
+        neck_kin_chain,
+        dtype: torch.dtype = torch.float32
+        ):
         """
             Selects the face contour depending on the reletive position of the head
             Input:
@@ -134,8 +140,7 @@ class FLAME(nn.Module):
 
         aa_pose = torch.index_select(pose.view(batch_size, -1, 3), 1,
                                      neck_kin_chain)
-        rot_mats = batch_rodrigues(
-            aa_pose.view(-1, 3), dtype=dtype).view(batch_size, -1, 3, 3)
+        rot_mats = batch_rodrigues(aa_pose.view(-1, 3)).view(batch_size, -1, 3, 3)
 
         rel_rot_mat = torch.eye(3, device=pose.device,
                                 dtype=dtype).unsqueeze_(dim=0).expand(batch_size, -1, -1)
@@ -229,16 +234,27 @@ class FLAME(nn.Module):
         return vertices, landmarks2d, landmarks3d
 
 
-    def forward(self, param_dictionary, zero_expression=False, zero_shape=False, zero_pose=False):
-        shape_params = param_dictionary['shape_params']
-        expression_params = param_dictionary['expression_params']
-        pose_params = param_dictionary.get('pose_params', None)
-        jaw_params = param_dictionary.get('jaw_params', None)
-        eye_pose_params = param_dictionary.get('eye_pose_params', None)
-        neck_pose_params = param_dictionary.get('neck_pose_params', None)
-        eyelid_params = param_dictionary.get('eyelid_params', None)
-        
+    # def forward(self, param_dictionary, zero_expression=False, zero_shape=False, zero_pose=False):
+    def forward(
+        self,
+        pose_params,
+        shape_params,
+        expression_params,
+        eyelid_params,
+        jaw_params,
+        zero_expression: bool = False,
+        zero_shape: bool = False,
+        zero_pose: bool = False
+        ):
+        # shape_params = param_dictionary.shape_params
+        # expression_params = param_dictionary.expression_params
+        # pose_params = param_dictionary.pose_params
+        # jaw_params = param_dictionary.jaw_params
+        # eyelid_params = param_dictionary.eyelid_params
+
         batch_size = shape_params.shape[0]
+        eye_pose_params = self.eye_pose.expand(batch_size, -1)
+        neck_pose_params = self.neck_pose.expand(batch_size, -1)
 
         # Adjust expression params size if needed
         if expression_params.shape[1] < self.n_exp:
@@ -260,16 +276,6 @@ class FLAME(nn.Module):
             pose_params = torch.zeros_like(pose_params).to(shape_params.device)
             pose_params[...,0] = 0.2
             pose_params[...,1] = -0.7
-
-        if pose_params is None:
-            pose_params = self.pose_params.expand(batch_size, -1)
-
-        if eye_pose_params is None:
-            eye_pose_params = self.eye_pose.expand(batch_size, -1)
-
-        if neck_pose_params is None:
-            neck_pose_params = self.neck_pose.expand(batch_size, -1)
-            
 
         betas = torch.cat([shape_params, expression_params], dim=1)
         full_pose = torch.cat([pose_params, neck_pose_params, jaw_params, eye_pose_params], dim=1)
@@ -306,12 +312,15 @@ class FLAME(nn.Module):
         landmarksmp = vertices2landmarks(vertices, self.faces_tensor,
                                        self.mp_lmk_faces_idx.repeat(vertices.shape[0], 1),
                                        self.mp_lmk_bary_coords.repeat(vertices.shape[0], 1, 1))
-
-        return {
-            'vertices': vertices, 
-            'landmarks_fan': landmarks2d, 
-            'landmarks_fan_3d': landmarks3d, 
-            'landmarks_mp': landmarksmp
-        }
+        
+        # FlameOutput = namedtuple("FlameOutput", ["vertices", "landmarks2d", "landmarks3d", "landmarksmp"])
+        # return FlameOutput(vertices, landmarks2d, landmarks3d, landmarksmp)
+        return vertices, landmarks2d, landmarks3d, landmarksmp
+        # return {
+            # 'vertices': vertices, 
+            # 'landmarks_fan': landmarks2d, 
+            # 'landmarks_fan_3d': landmarks3d, 
+            # 'landmarks_mp': landmarksmp
+        # }
 
 

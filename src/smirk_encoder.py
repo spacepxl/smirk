@@ -2,6 +2,7 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 import timm
+from collections import namedtuple
 
 
 def create_backbone(backbone_name, pretrained=True):
@@ -33,16 +34,12 @@ class PoseEncoder(nn.Module):
 
     def forward(self, img):
         features = self.encoder(img)[-1]
-            
         features = F.adaptive_avg_pool2d(features, (1, 1)).squeeze(-1).squeeze(-1)
-
-        outputs = {}
-
         pose_cam = self.pose_cam_layers(features).reshape(img.size(0), -1)
-        outputs['pose_params'] = pose_cam[...,:3]
-        outputs['cam'] = pose_cam[...,3:]
-
-        return outputs
+        
+        pose_params = pose_cam[...,:3]
+        cam = pose_cam[...,3:]
+        return pose_params, cam
 
 
 class ShapeEncoder(nn.Module):
@@ -65,12 +62,10 @@ class ShapeEncoder(nn.Module):
 
     def forward(self, img):
         features = self.encoder(img)[-1]
-            
         features = F.adaptive_avg_pool2d(features, (1, 1)).squeeze(-1).squeeze(-1)
-
-        parameters = self.shape_layers(features).reshape(img.size(0), -1)
-
-        return {'shape_params': parameters}
+        
+        shape_params = self.shape_layers(features).reshape(img.size(0), -1)
+        return shape_params
 
 
 class ExpressionEncoder(nn.Module):
@@ -94,20 +89,14 @@ class ExpressionEncoder(nn.Module):
 
     def forward(self, img):
         features = self.encoder(img)[-1]
-            
         features = F.adaptive_avg_pool2d(features, (1, 1)).squeeze(-1).squeeze(-1)
-
-
         parameters = self.expression_layers(features).reshape(img.size(0), -1)
-
-        outputs = {}
-
-        outputs['expression_params'] = parameters[...,:self.n_exp]
-        outputs['eyelid_params'] = torch.clamp(parameters[...,self.n_exp:self.n_exp+2], 0, 1)
-        outputs['jaw_params'] = torch.cat([F.relu(parameters[...,self.n_exp+2].unsqueeze(-1)), 
-                                           torch.clamp(parameters[...,self.n_exp+3:self.n_exp+5], -.2, .2)], dim=-1)
-
-        return outputs
+        
+        expression_params = parameters[...,:self.n_exp]
+        eyelid_params = torch.clamp(parameters[...,self.n_exp:self.n_exp+2], 0, 1)
+        jaw_params = torch.cat([F.relu(parameters[...,self.n_exp+2].unsqueeze(-1)), 
+            torch.clamp(parameters[...,self.n_exp+3:self.n_exp+5], -.2, .2)], dim=-1)
+        return expression_params, eyelid_params, jaw_params
 
 
 class SmirkEncoder(nn.Module):
@@ -121,13 +110,10 @@ class SmirkEncoder(nn.Module):
         self.expression_encoder = ExpressionEncoder(n_exp=n_exp) 
 
     def forward(self, img):
-        pose_outputs = self.pose_encoder(img)
-        shape_outputs = self.shape_encoder(img)
-        expression_outputs = self.expression_encoder(img)
-
-        outputs = {}
-        outputs.update(pose_outputs)
-        outputs.update(shape_outputs)
-        outputs.update(expression_outputs)
-
-        return outputs
+        pose_params, cam = self.pose_encoder(img)
+        shape_params = self.shape_encoder(img)
+        expression_params, eyelid_params, jaw_params = self.expression_encoder(img)
+        
+        # SmirkOutput = namedtuple("SmirkOutput", ["pose_params", "cam", "shape_params", "expression_params", "eyelid_params", "jaw_params"])
+        # return SmirkOutput(pose_params, cam, shape_params, expression_params, eyelid_params, jaw_params)
+        return pose_params, cam, shape_params, expression_params, eyelid_params, jaw_params
